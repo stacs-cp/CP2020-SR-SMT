@@ -1,0 +1,65 @@
+language ESSENCE' 1.0
+
+given nodes: int(1..)
+
+given parentSets: matrix indexed by [int(1..nodes), int(..), int(..)] of int(1..nodes)
+
+given scores: matrix indexed by [int(1..nodes), int(..)] of int
+
+given emptySetRemoved: bool
+
+$  Seems to produce wrong answers when emptySetRemoved=true.
+
+letting numPS=[ sum([ 1 | j : indexOf(parentSets[i,..,..])]) | i: int(1..nodes) ]
+
+find selectPS: matrix indexed by [int(1..nodes), int(1..max(numPS))] of bool
+
+$ Is node A before B for each A and B.   order[a,b] is true iff a comes before b in the ordering. 
+$ The ordering is total, therefore !order[a,b] means that b comes before a. 
+
+find order: matrix indexed by [int(1..nodes), int(1..nodes)] of bool
+
+maximising sum([ sum([ selectPS[i,j]*scores[i,j] | j : indexOf(scores[i,..]) ]) | i : indexOf(scores)])
+
+such that
+
+$  Select at most one parent set for each node.
+(!emptySetRemoved) ->
+  forAll i : indexOf(selectPS).
+    sum(selectPS[i,..])=1,
+
+emptySetRemoved -> 
+  forAll i : indexOf(selectPS).
+    sum(selectPS[i,..])<=1,
+
+$  Set unnecessary selectPS variables to false.
+forAll i : indexOf(selectPS).
+  forAll j : indexOf(selectPS[i,..]).
+    !(j in indexOf(scores[i,..])) -> !selectPS[i,j],
+
+$  Link order and selectPS variables.
+forAll i : indexOf(parentSets).
+  forAll j : indexOf(parentSets[i,..,..]).
+    forAll k : indexOf(parentSets[i,j,..]).
+      $  If the parent set j is selected for node i, then node parentSets[i,j,k] must come before node i. 
+      selectPS[i,j] ->
+        order[parentSets[i,j,k],i],
+
+forAll i : int(1..nodes).
+  !order[i,i],
+
+forAll i : int(1..nodes).
+  forAll j : int(i+1..nodes).
+    order[i,j] <-> !order[j,i],
+
+$  Transitive closure of order variables.
+forAll i : int(1..nodes).
+  forAll j : int(1..nodes).
+    forAll k : int(1..nodes).
+      allDiff([i,j,k]) ->
+        and([
+          order[i,j] /\ order[j,k] -> order[i,k],
+          !order[i,j] /\ !order[j,k] -> !order[i,k],
+        ]),
+
+true

@@ -1,0 +1,83 @@
+language ESSENCE' 1.0
+
+$  timetable model of RCPSP.  At each time step, have a set of bools indicating which jobs are active. 
+$  This version for SR ver with ragged matrices.
+
+
+
+
+given horizon : int(0..)                             $ makespan
+given jobs : int(1..)                                $ number of jobs
+given resourcesRenew : int(0..)                      $ number of renewable resources
+given resourcesNonrenew : int(0..)                   $ number of non-renewable resources
+
+letting resources=resourcesRenew+resourcesNonrenew   $ number of all resources
+
+given resourceLimits : matrix indexed by [int(1..resources)] of int(0..)
+
+$  For each job, the list of successors.
+given successors : matrix indexed by [int(1..jobs), int(..)] of int(1..jobs)
+
+$  resourceUsage indexed by job, mode and resource. 
+given resourceUsage : matrix indexed by [int(1..jobs), int(..), int(1..resources)] of int(0..)
+
+$  durations indexed by job, mode.
+given durations : matrix indexed by [int(1..jobs), int(..)] of int(0..)
+
+letting maxmode = max([ length(durations[j,..]) | j : int(1..jobs) ])
+letting maxduration = max( flatten(durations) )
+letting maxdemand = max ( flatten(resourceUsage) )
+
+$$$$ Alan params
+given candidateParents : matrix indexed by [int(1..jobs), int(..)] of int(1..jobs)
+
+find jobStart : matrix indexed by [int(1..jobs)] of int(0..horizon)
+
+$  Indexed by job, mode, timestep.
+find jobActive : matrix indexed by [int(1..jobs), int(1..maxmode), int(0..horizon)] of bool
+
+$  Each activity has a mode. 
+find mode : matrix indexed by [int(1..jobs)] of int(1..maxmode)
+
+branching on [jobActive,jobStart,mode]
+
+minimising jobStart[jobs]   $ minimise start time of last job.
+
+such that
+
+$  Get rid of excess jobActive variables.
+forAll j : int(1..jobs) .
+  forAll m : int(length(durations[j,..])+1..maxmode) .
+    forAll t : int(0..horizon) .
+      !jobActive[j,m,t],
+
+$  Bound the mode variables.
+forAll j : int(1..jobs) .
+  mode[j]<=length(durations[j,..]),
+      
+$ Connect jobActive and jobStart
+forAll j : int(1..jobs) .
+  forAll m : int(1..length(durations[j,..])) .
+    forAll t : int(0..horizon) .
+      (jobActive[j, m, t]<->(jobStart[j]<=t /\ jobStart[j]>t-durations[j,..][mode[j]] /\ mode[j]=m)),
+
+$ Job successors
+forAll j : indexOf(jobStart) .
+  forAll succ : indexOf(successors[j,..]) .
+    jobStart[j]+durations[j,..][mode[j]]<=jobStart[successors[j,succ]],
+
+$ Resource constraints
+forAll t : int(0..horizon) .
+  forAll res : int(1..resourcesRenew).
+$    amopb( [   [  resourceUsage[j,..,res],  [jobActive[j,m,t]| m : indexOf(resourceUsage[j,..,res])]  ] 
+$        | j: int(1..jobs)],  resourceLimits[res]),
+    sum([ jobActive[j, m, t] * resourceUsage[j, m, res] | j: int(1..jobs), m: indexOf(resourceUsage[j,..,..])])<=resourceLimits[res],
+
+$  Non-renewable resource cts
+forAll res : int(resourcesRenew+1..resources) .
+    sum([ resourceUsage[j, m, res] * (mode[j]=m) | j: int(1..jobs), m: indexOf(resourceUsage[j,..,..]) ])<=resourceLimits[res],
+
+$  Fix the first activity to 0.
+jobStart[1]=0,
+
+true

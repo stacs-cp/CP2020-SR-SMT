@@ -1,0 +1,377 @@
+language ESSENCE' 1.0
+
+letting TOTAL_CARDS be 52
+letting SUITS be 4
+letting CARDS_IN_SUIT be 13
+letting TOTAL_MOVES be 60
+letting TABLEAU_PILES be 4
+letting STATES be domain int(0..TOTAL_MOVES)
+letting MOVES be domain int(1..TOTAL_MOVES)
+letting CARDS be domain int(0..TOTAL_CARDS-1)
+letting STOCK_INDICES be domain int(0..TOTAL_CARDS-1)
+letting POINTER_INDICES be domain int(0..TOTAL_CARDS)
+letting ENTRIES be domain int(-1..TOTAL_CARDS-1)
+letting POSSIBLE_MOVES be domain int(-1..TABLEAU_PILES+1)
+letting PILES be domain int(0..TABLEAU_PILES-1)
+letting PILES_NEG be domain int(-1..TABLEAU_PILES-1)
+letting PILE_INDICES be domain int(0..CARDS_IN_SUIT-1)
+letting CARD_COUNT be domain int(0..CARDS_IN_SUIT)
+letting EMPTY be -1
+letting NO_MOVE be -1
+letting DEAL be TABLEAU_PILES
+letting DISCARD be TABLEAU_PILES + 1
+letting STOCK_END be 52
+letting ACE be 12
+
+given stock : matrix indexed by [STOCK_INDICES] of CARDS
+
+find stockPointer : matrix indexed by [STATES] of POINTER_INDICES
+find movesMade : matrix indexed by [MOVES] of POSSIBLE_MOVES
+find moveTo : matrix indexed by [MOVES] of PILES_NEG
+find tableauStates : matrix indexed by [STATES,PILES,PILE_INDICES] of ENTRIES
+find cardsInPiles : matrix indexed by [STATES,PILES] of CARD_COUNT
+find endState : matrix indexed by [STATES] of bool
+
+$branching on [movesMade]
+
+such that
+
+$Intially the tableau is empty
+forAll pile : PILES .
+    forAll pos : PILE_INDICES .
+        tableauStates[0,pile,pos] = EMPTY,
+
+$Initially there are no cards in any pile
+forAll pile : PILES .
+    cardsInPiles[0,pile] = 0,
+
+$The stockPointer starts at 0
+stockPointer[0] = 0,
+
+$An end state is reached when the four cards in the
+$tableau are aces and the stock is empty
+forAll state : STATES .
+    (
+    forAll pile : PILES .
+        cardsInPiles[state,pile] = 1
+    )
+    /\
+    stockPointer[state] = STOCK_END
+    /\
+    (
+    forAll pile : PILES .
+        tableauStates[state,pile,0] % CARDS_IN_SUIT = ACE
+    )
+    <->
+    endState[state] = true,
+
+$No moves are made if the previous state is an end state
+forAll move : MOVES .
+    endState[move-1] = true
+    <->
+    movesMade[move] = NO_MOVE,
+
+$The first move is a Deal
+movesMade[1] = DEAL,
+
+$The final state is an end state
+endState[TOTAL_MOVES] = true,
+
+$Can't deal cards when at end of stock
+forAll move : MOVES .
+    stockPointer[move-1] = STOCK_END
+    ->
+    movesMade[move] != DEAL,
+
+$When a deal is made a card is added to each tableau pile
+$The stock pointer is updated
+forAll move : MOVES .
+    movesMade[move] = DEAL
+    ->
+    (
+    forAll pile : PILES .
+        tableauStates[move,pile,cardsInPiles[move-1,pile]]
+        = stock[stockPointer[move-1] + pile]
+        /\
+        cardsInPiles[move,pile] = cardsInPiles[move-1,pile] + 1
+    )
+    /\
+    stockPointer[move] = stockPointer[move-1] + TABLEAU_PILES
+    /\
+    (
+    forAll pile : PILES .
+        forAll pos : PILE_INDICES .
+            pos != cardsInPiles[move-1,pile]
+            ->
+            tableauStates[move,pile,pos]
+            =
+            tableauStates[move-1,pile,pos]
+    ),
+
+$The stockPointer only changes when a deal is made
+forAll move : MOVES .
+    movesMade[move] != DEAL
+    ->
+    stockPointer[move] = stockPointer[move-1],
+
+$If no move is made the tableau remains the same
+$The number of cards per pile also remains the same
+forAll move : MOVES .
+    movesMade[move] = NO_MOVE
+    ->
+    (
+    forAll pile : PILES .
+        forAll pos : PILE_INDICES .
+            tableauStates[move-1,pile,pos]
+            =
+            tableauStates[move,pile,pos]
+    )
+    /\
+    (
+    forAll pile : PILES .
+        cardsInPiles[move,pile]
+        = cardsInPiles[move-1,pile]
+    ),
+
+$If a card is lower than another of the same suit discard it
+forAll move : MOVES .
+    forAll pile1 : PILES .
+        forAll pile2 : PILES .
+            pile1 != pile2
+            /\ cardsInPiles[move-1,pile1] != 0
+            /\ cardsInPiles[move-1,pile2] != 0
+            /\ tableauStates[move-1,pile1,cardsInPiles[move-1,pile1]-1] / CARDS_IN_SUIT
+            = tableauStates[move-1,pile2,cardsInPiles[move-1,pile2]-1] / CARDS_IN_SUIT
+            /\ tableauStates[move-1,pile1,cardsInPiles[move-1,pile1]-1]
+            < tableauStates[move-1,pile2,cardsInPiles[move-1,pile2]-1]
+            ->
+            tableauStates[move,pile1,cardsInPiles[move-1,pile1]-1] = EMPTY
+            /\ cardsInPiles[move,pile1] = cardsInPiles[move-1,pile1] -1
+            /\ movesMade[move] = DISCARD,
+
+$If a card is the highest of its suit keep it
+forAll move : MOVES .
+    forAll pile1 : PILES .
+        movesMade[move] = DISCARD
+        ->
+        (
+        (
+        forAll pile2 : PILES .
+            pile1 = pile2
+            \/
+            cardsInPiles[move-1,pile1] = 0
+            \/
+            cardsInPiles[move-1,pile2] = 0
+            \/
+            tableauStates[move-1,pile1,cardsInPiles[move-1,pile1]-1] / CARDS_IN_SUIT
+            != tableauStates[move-1,pile2,cardsInPiles[move-1,pile2]-1] / CARDS_IN_SUIT
+            \/
+            tableauStates[move-1,pile1,cardsInPiles[move-1,pile1]-1]
+            > tableauStates[move-1,pile2,cardsInPiles[move-1,pile2]-1]
+        )
+        ->
+        cardsInPiles[move,pile1] = cardsInPiles[move-1,pile1]
+        /\
+        (
+        forAll pos : PILE_INDICES .
+            tableauStates[move,pile1,pos]
+            = tableauStates[move-1,pile1,pos]
+        )
+        ),
+
+$Can't discard if all of different suits
+forAll move : MOVES .
+    (
+    forAll pile1,pile2 : PILES .
+        pile1 = pile2
+        \/
+        cardsInPiles[move-1,pile1] = 0
+        \/
+        cardsInPiles[move-1,pile2] = 0
+        \/
+        tableauStates[move-1,pile1,cardsInPiles[move-1,pile1]-1] / CARDS_IN_SUIT
+        != tableauStates[move-1,pile2,cardsInPiles[move-1,pile2]-1] / CARDS_IN_SUIT
+    )
+    ->
+    movesMade[move] != DISCARD,
+
+$When discarding all cards except the discarded cards remain the same
+forAll move : MOVES .
+    movesMade[move] = DISCARD
+    ->
+    (
+    forAll pile : PILES .
+        forAll pos : PILE_INDICES .
+            pos != cardsInPiles[move-1,pile] -1
+            ->
+            tableauStates[move,pile,pos]
+            = tableauStates[move-1,pile,pos]
+    ),
+
+$If you aren't moving a card you aren't moving it to anywhere
+forAll move : MOVES .
+    movesMade[move] = NO_MOVE
+    \/ movesMade[move] = DEAL
+    \/ movesMade[move] = DISCARD
+    <->
+    moveTo[move] = -1,
+
+$If you can't discard and there is an empty space
+$move a card from a pile with more than one card into
+$an empty space
+forAll move : MOVES .
+    movesMade[move] != DISCARD
+    /\
+    (
+    exists pile : PILES .
+        cardsInPiles[move-1,pile] = 0
+    )
+    /\
+    (
+    exists pile : PILES .
+        cardsInPiles[move-1,pile] > 1
+    )
+    ->
+    (
+    exists pileFrom, pileTo : PILES .
+        (
+        forAll pile : PILES .
+            cardsInPiles[move-1,pile] = 0
+            /\
+            pile != pileTo
+            ->
+            pileTo < pile
+        )
+        /\
+        movesMade[move] = pileFrom
+        /\
+        moveTo[move] = pileTo
+        /\
+        cardsInPiles[move-1, pileFrom] > 1
+        /\
+        cardsInPiles[move-1, pileTo] = 0
+        /\
+        cardsInPiles[move,pileFrom] = cardsInPiles[move-1,pileFrom] -1
+        /\
+        cardsInPiles[move,pileTo] = 1
+        /\
+        tableauStates[move-1,pileTo,0] = -1
+        /\
+        tableauStates[move,pileFrom,cardsInPiles[move-1,pileFrom]-1] = -1
+        /\
+        tableauStates[move,pileTo,0]
+        =
+        tableauStates[move-1,pileFrom,cardsInPiles[move-1,pileFrom]-1]
+        /\
+        (
+        forAll pile : PILES .
+            forAll pos : PILE_INDICES .
+            !
+            (
+            (
+            pileFrom = pile
+            /\
+            pos = cardsInPiles[move-1,pileFrom]-1
+            )
+            \/
+            (
+            pileTo = pile
+            /\
+            pos = 0
+            )
+            )
+            ->
+            tableauStates[move-1,pile,pos]
+            =
+            tableauStates[move,pile,pos]
+        )
+        /\
+        (
+        forAll pile : PILES .
+            !
+            (
+            pile = pileTo
+            \/
+            pile = pileFrom
+            )
+            ->
+            cardsInPiles[move,pile] = cardsInPiles[move-1,pile]
+        )
+    ),
+
+$If a move is made all cards remain the same besides the ones moving
+forAll move : MOVES .
+    moveTo[move] != -1
+    ->
+    cardsInPiles[move,movesMade[move]] = cardsInPiles[move-1,movesMade[move]] -1
+    /\
+    cardsInPiles[move,moveTo[move]] = 1
+    /\
+    (
+    forAll pile : PILES .
+        forAll pos : PILE_INDICES .
+        !
+        (
+        (
+        movesMade[move] = pile
+        /\
+        pos = cardsInPiles[move-1,movesMade[move]]-1
+        )
+        \/
+        (
+        moveTo[move] = pile
+        /\
+        pos = 0
+        )
+        )
+        ->
+        tableauStates[move-1,pile,pos]
+        =
+        tableauStates[move,pile,pos]
+    )
+    /\
+    (
+    forAll pile : PILES .
+        !
+        (
+        pile = moveTo[move]
+        \/
+        pile = movesMade[move]
+        )
+        ->
+        cardsInPiles[move,pile] = cardsInPiles[move-1,pile]
+    ),
+
+
+$If you can't move or discard you have to deal
+forAll move : MOVES .
+    !
+    (
+        (
+            exists pile : PILES .
+                cardsInPiles[move-1,pile] = 0
+        )
+        /\
+        (
+            exists pile : PILES .
+                cardsInPiles[move-1,pile] > 1
+        )
+    )
+    /\
+    (
+        forAll pile1,pile2 : PILES .
+            pile1 = pile2
+            \/
+            cardsInPiles[move-1,pile1] = 0
+            \/
+            cardsInPiles[move-1,pile2] = 0
+            \/
+            tableauStates[move-1,pile1,cardsInPiles[move-1,pile1]-1] / CARDS_IN_SUIT
+                     != tableauStates[move-1,pile2,cardsInPiles[move-1,pile2]-1] / CARDS_IN_SUIT
+    )
+    /\
+    !endState[move-1]
+    ->
+    movesMade[move] = DEAL,
+
+true

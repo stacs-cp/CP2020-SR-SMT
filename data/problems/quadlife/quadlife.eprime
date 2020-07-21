@@ -1,0 +1,153 @@
+language ESSENCE' 1.0
+
+given nbDim, nbTime : int
+
+letting PDIM be int(-1..nbDim+2)                $ padded by 2
+letting DIM  be int(1..nbDim)
+letting TIME be int(1..nbTime)
+
+find l : matrix indexed by [TIME, PDIM, PDIM] of int(0..4)      $ 0 is dead
+                                                                $ >0 is alive with that colour
+
+maximising sum([ l[1,i,j] > 0 | i,j : DIM ])
+
+such that
+
+    $ padded parts are always dead
+    forall t : TIME . forall i, j : PDIM .
+        (!(i in DIM /\ j in DIM)) -> l[t,i,j] = 0,
+
+    $ any two layers not equal
+    forall t : TIME . forall t2 : int(t+1..nbTime) .
+        exists i,j : DIM . l[t,i,j] != l[t2,i,j],
+    
+    $ first layer lex less than all other layers
+    forall t : int(2..nbTime) .
+        flatten(l[1,..,..]) <lex flatten(l[t,..,..]),
+
+    $ symmetry breaking on first layer
+    
+    [ l[1,i,j] | i, j : DIM ] <=lex [ l[1,i2,j2]
+                                    | i, j : DIM
+                                    , i2 : int(nbDim+1- i)
+                                    , j2 : int(j)
+                                    ],
+
+    [ l[1,i,j] | i, j : DIM ] <=lex [ l[1,i2,j2]
+                                    | i, j : DIM
+                                    , i2 : int(i)
+                                    , j2 : int(nbDim+1- j)
+                                    ],
+
+    [ l[1,i,j] | i, j : DIM ] <=lex [ l[1,i2,j2]
+                                    | i, j : DIM
+                                    , i2 : int(nbDim+1- i)
+                                    , j2 : int(nbDim+1- j)
+                                    ],
+
+    [ l[1,i,j] | i, j : DIM ] <=lex [ l[1,i2,j2]
+                                    | i, j : DIM
+                                    , i2 : int(j)
+                                    , j2 : int(i)
+                                    ],
+
+    [ l[1,i,j] | i, j : DIM ] <=lex [ l[1,i2,j2]
+                                    | i, j : DIM
+                                    , i2 : int(nbDim+1- j)
+                                    , j2 : int(i)
+                                    ],
+
+    [ l[1,i,j] | i, j : DIM ] <=lex [ l[1,i2,j2]
+                                    | i, j : DIM
+                                    , i2 : int(j)
+                                    , j2 : int(nbDim+1- i)
+                                    ],
+
+    [ l[1,i,j] | i, j : DIM ] <=lex [ l[1,i2,j2]
+                                    | i, j : DIM
+                                    , i2 : int(nbDim+1- j)
+                                    , j2 : int(nbDim+1- i)
+                                    ],
+
+    $ rules from https://en.wikipedia.org/wiki/Conway%27s_Game_of_Life#Rules
+    forall t : int(1..nbTime) . forall i, j : int(0..nbDim+1) .
+        exists tplus1 : int( ((t%nbTime)+1) ) .
+        makeTable(and(
+            [
+                $ Rule 1: Any live cell with fewer than two live neighbours dies, as if caused by under-population.
+                (l[t,i,j] > 0) /\
+                (sum([ l[t,i-1,j-1] > 0, l[t,i-1,j] > 0, l[t,i-1,j+1] > 0
+                     , l[t,i  ,j-1] > 0,                 l[t,i  ,j+1] > 0
+                     , l[t,i+1,j-1] > 0, l[t,i+1,j] > 0, l[t,i+1,j+1] > 0
+                     ]) < 2)
+                -> l[tplus1,i,j] = 0
+            ,
+                $ Rule 2: Any live cell with two or three live neighbours lives on to the next generation.
+                (l[t,i,j] > 0) /\
+                (sum([ l[t,i-1,j-1] > 0, l[t,i-1,j] > 0, l[t,i-1,j+1] > 0
+                     , l[t,i  ,j-1] > 0,                 l[t,i  ,j+1] > 0
+                     , l[t,i+1,j-1] > 0, l[t,i+1,j] > 0, l[t,i+1,j+1] > 0
+                     ]) in int(2,3))
+                -> l[tplus1,i,j] = l[t,i,j]
+            ,
+                $ Rule 3: Any live cell with more than three live neighbours dies, as if by over-population.
+                (l[t,i,j] > 0) /\
+                (sum([ l[t,i-1,j-1] > 0, l[t,i-1,j] > 0, l[t,i-1,j+1] > 0
+                     , l[t,i  ,j-1] > 0,                 l[t,i  ,j+1] > 0
+                     , l[t,i+1,j-1] > 0, l[t,i+1,j] > 0, l[t,i+1,j+1] > 0
+                     ]) > 3)
+                -> l[tplus1,i,j] = 0
+            ,
+                $ Rule 4: Any dead cell with exactly three live neighbours becomes a live cell, as if by reproduction.
+                (l[t,i,j] = 0) /\
+                (sum([ l[t,i-1,j-1] > 0, l[t,i-1,j] > 0, l[t,i-1,j+1] > 0
+                     , l[t,i  ,j-1] > 0,                 l[t,i  ,j+1] > 0
+                     , l[t,i+1,j-1] > 0, l[t,i+1,j] > 0, l[t,i+1,j+1] > 0
+                     ]) = 3)
+                -> and([
+                    $ the rule is:
+                    $ if there is a colour that is used more than once, pick that
+                    $ if 3 colours are used once each, pick the 4th colour
+
+                    $ if the max occurrence is 1, the colours must be used 1,1,1,0 times (in some order)
+                    max([ sum([ l[t,i-1,j-1] = cl, l[t,i-1,j] = cl, l[t,i-1,j+1] = cl
+                              , l[t,i  ,j-1] = cl,                  l[t,i  ,j+1] = cl
+                              , l[t,i+1,j-1] = cl, l[t,i+1,j] = cl, l[t,i+1,j+1] = cl
+                              ])
+                        | cl : int(1..4)
+                        ]) = 1
+                        ->
+                        $ the cl for which the occurrence is 0 is the next.
+                        (exists cl : int(1..4) . sum([ l[t,i-1,j-1] = cl, l[t,i-1,j] = cl, l[t,i-1,j+1] = cl
+                                                     , l[t,i  ,j-1] = cl,                  l[t,i  ,j+1] = cl
+                                                     , l[t,i+1,j-1] = cl, l[t,i+1,j] = cl, l[t,i+1,j+1] = cl
+                                                     ]) = 0
+                                                   /\ l[tplus1,i,j] = cl)
+                    ,
+                    $ if the max occurrence is 2 or 3
+                    $ the next colour should be the most popular
+                    max([ sum([ l[t,i-1,j-1] = cl, l[t,i-1,j] = cl, l[t,i-1,j+1] = cl
+                              , l[t,i  ,j-1] = cl,                  l[t,i  ,j+1] = cl
+                              , l[t,i+1,j-1] = cl, l[t,i+1,j] = cl, l[t,i+1,j+1] = cl
+                              ])
+                        | cl : int(1..4)
+                        ]) in int(2..3)
+                        ->
+                        $ the cl for which the occurrence is 2 is the next.
+                        (exists cl : int(1..4) . sum([ l[t,i-1,j-1] = cl, l[t,i-1,j] = cl, l[t,i-1,j+1] = cl
+                                                     , l[t,i  ,j-1] = cl,                  l[t,i  ,j+1] = cl
+                                                     , l[t,i+1,j-1] = cl, l[t,i+1,j] = cl, l[t,i+1,j+1] = cl
+                                                     ]) in int(2..3)
+                                                   /\ l[tplus1,i,j] = cl)
+                    ])
+            ,
+                $ Frame: Any dead cell with not three live neighbours stays dead.
+                (l[t,i,j] = 0) /\
+                (sum([ l[t,i-1,j-1] > 0, l[t,i-1,j] > 0, l[t,i-1,j+1] > 0
+                     , l[t,i  ,j-1] > 0,                 l[t,i  ,j+1] > 0
+                     , l[t,i+1,j-1] > 0, l[t,i+1,j] > 0, l[t,i+1,j+1] > 0
+                     ]) != 3)
+                -> l[tplus1,i,j] = 0
+            ])),
+
+    true
